@@ -25,7 +25,7 @@ class NatsWrapper:
         self.add_signal_handler()
 
         async def error_cb(e):
-            logging.warning("Error: {}".format(str(e)))
+            logging.warning(f"Error: {str(e)}")
 
         async def closed_cb():
             logging.warning("Closed connection to NATS")
@@ -35,7 +35,7 @@ class NatsWrapper:
 
         async def reconnected_cb():
             logging.warning(
-                "Reconnected to NATS at nats://{}".format(self.nc.connected_url.netloc)
+                f"Reconnected to NATS at nats://{self.nc.connected_url.netloc}"
             )
 
         options = {
