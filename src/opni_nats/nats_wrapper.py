@@ -7,6 +7,7 @@ import signal
 # Third Party
 import pandas as pd
 from nats.aio.client import Client as NATS
+from nats.aio.errors import ErrTimeout
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -69,7 +70,7 @@ class NatsWrapper:
     async def subscribe(
         self,
         nats_subject: str,
-        payload_queue: asyncio.Queue,
+        payload_queue: asyncio.Queue = None,
         nats_queue: str = "",
         subscribe_handler=None,
     ):
@@ -88,6 +89,40 @@ class NatsWrapper:
         this is not necessary at this point though
         """
         await self.nc.publish(nats_subject, payload_df)
+
+    async def request(self, nats_subject: str, payload, timeout=1):
+        return await self.nc.request(nats_subject, payload, timeout=timeout)
+
+
+async def nats_request(nw, payload_queue):
+    while True:
+        payload = await payload_queue.get()
+        if payload is None:
+            continue
+        payload_df = pd.read_json(payload, dtype={"_id": object})
+
+        try:
+            response = await nw.request(
+                "logs",
+                payload_df.to_json().encode(),
+                timeout=1,
+            )
+            response = response.data.decode()
+        except ErrTimeout:
+            response = ""
+        print(response)
+
+
+async def nats_reply(nw):
+    async def receive_and_reply(msg):
+        reply_subject = msg.reply
+        if msg.data:
+            reply_message = b"NO"
+        else:
+            reply_message = b"YES"
+        await nw.publish(reply_subject, reply_message)
+
+    await nw.subscribe("logs", subscribe_handler=receive_and_reply)
 
 
 async def nats_subscriber(nw, payload_queue):
