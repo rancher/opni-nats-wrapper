@@ -121,6 +121,7 @@ async def nats_reply(nw):
         else:
             reply_message = b"YES"
         await nw.publish(reply_subject, reply_message)
+        # await payload_queue.put(msg.data.decode())
 
     await nw.subscribe("logs", subscribe_handler=receive_and_reply)
 
@@ -145,8 +146,17 @@ if __name__ == "__main__":
     nw = NatsWrapper(loop)
     subscriber_coroutine = nats_subscriber(nw, payload_queue)
     publisher_coroutine = nats_publisher(nw, payload_queue)
+    request_coroutine = nats_request(nw, payload_queue)
+    reply_coroutine = nats_reply(nw)
 
-    loop.run_until_complete(asyncio.gather(subscriber_coroutine, publisher_coroutine))
+    loop.run_until_complete(
+        asyncio.gather(
+            subscriber_coroutine,
+            publisher_coroutine,
+            request_coroutine,
+            reply_coroutine,
+        )
+    )
     try:
         loop.run_forever()
     finally:
