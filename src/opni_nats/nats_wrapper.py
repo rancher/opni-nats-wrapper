@@ -5,8 +5,8 @@ import os
 import signal
 
 # Third Party
-import pandas as pd
 from nats.aio.client import Client as NATS
+from nats.aio.errors import ErrTimeout
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -56,6 +56,9 @@ class NatsWrapper:
             logging.info("Failed to connect to nats")
             logging.error(e)
 
+    async def close(self):
+        await self.nc.close()
+
     def add_signal_handler(self):
         def signal_handler():
             if self.nc.is_closed:
@@ -69,7 +72,7 @@ class NatsWrapper:
     async def subscribe(
         self,
         nats_subject: str,
-        payload_queue: asyncio.Queue,
+        payload_queue: asyncio.Queue = None,
         nats_queue: str = "",
         subscribe_handler=None,
     ):
@@ -89,30 +92,78 @@ class NatsWrapper:
         """
         await self.nc.publish(nats_subject, payload_df)
 
+    async def request(self, nats_subject: str, payload, timeout=1):
+        return await self.nc.request(nats_subject, payload, timeout=timeout)
+
+
+async def nats_request(nw):
+    my_request = b"Request!"
+    try:
+        response = await nw.request(
+            "logs",
+            my_request,
+            timeout=1,
+        )
+        response = response.data.decode()
+    except ErrTimeout:
+        response = ""
+    logging.info(f" <nats request> response for the request : {response}")
+
+
+async def nats_reply(nw):
+    async def receive_and_reply(msg):
+        reply_subject = msg.reply
+        if msg.data:
+            reply_message = b"YES"
+        else:
+            reply_message = b"NO"
+        logging.info(f"<nats reply> reply_message : {reply_message}")
+        await nw.publish(reply_subject, reply_message)
+
+    await nw.subscribe("logs", subscribe_handler=receive_and_reply)
+
 
 async def nats_subscriber(nw, payload_queue):
-    await nw.subscribe(nats_subject="logs", payload_queue=payload_queue)
+    async def my_handler(msg):
+        subject = msg.subject
+        reply = msg.reply
+        payload_data = msg.data.decode()
+        logging.info(f"<nats subscriber> received payload message : {payload_data}")
+        await payload_queue.put(payload_data)
+
+    await nw.subscribe(
+        nats_subject="preprocessing-logs",
+        payload_queue=payload_queue,
+        subscribe_handler=my_handler,
+    )
 
 
-async def nats_publisher(nw, payload_queue):
-    while True:
-        payload = await payload_queue.get()
-        if payload is None:
-            continue
-        payload_df = pd.read_json(payload, dtype={"_id": object})
-        await nw.publish("preprocessed_logs", payload_df.to_json().encode())
+async def nats_publisher(nw):
+    payload = b"Message"
+    logging.info(f"<nats publisher> sending message : {payload}")
+    await nw.publish("preprocessing-logs", payload)
+
+
+async def run(loop):
+    logging.info("Attempting to connect to NATS")
+    await nw.connect()
+
+    # publish and subscribe
+    payload_queue = asyncio.Queue(loop=loop)
+    await nats_subscriber(nw, payload_queue)
+    await nats_publisher(nw)
+
+    # request and reply
+    await nats_reply(nw)
+    await nats_request(nw)
+
+    await nw.close()
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    payload_queue = asyncio.Queue(loop=loop)
 
-    nw = NatsWrapper(loop)
-    subscriber_coroutine = nats_subscriber(nw, payload_queue)
-    publisher_coroutine = nats_publisher(nw, payload_queue)
-
-    loop.run_until_complete(asyncio.gather(subscriber_coroutine, publisher_coroutine))
-    try:
-        loop.run_forever()
-    finally:
-        loop.close()
+    nw = NatsWrapper()
+    task = loop.create_task(run(loop))
+    loop.run_until_complete(task)
+    loop.close()
