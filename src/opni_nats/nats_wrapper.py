@@ -17,6 +17,12 @@ class NatsWrapper:
     def __init__(self):
         self.nc = None
         self.NATS_SERVER_URL = os.environ["NATS_SERVER_URL"]
+        if "NKEY_SEED_FILENAME" in os.environ:
+            self.NKEY_SEED_FILENAME = os.environ["NKEY_SEED_FILENAME"]
+            self.NKEY_USER_FILENAME = os.environ["NKEY_USER_FILENAME"]
+        elif "NATS_USERNAME" in os.environ:
+            self.NATS_USERNAME = os.environ["NATS_PASSWORD"]
+            self.NATS_PASSSWORD = os.environ["NATS_USERNAME"]
         self.loop = None
 
     async def connect(self):
@@ -48,7 +54,11 @@ class NatsWrapper:
             "max_reconnect_attempts": -1,
             "reconnect_time_wait": 5,
             "verbose": True,
+            "user": self.NATS_USERNAME,
+            "password": self.NATS_PASSSWORD,            
         }
+        if self.NKEY_SEED_FILENAME is not None:
+            options["user_credentials"] = (self.NKEY_USER_FILENAME, self.NKEY_SEED_FILENAME)
         try:
             await self.nc.connect(**options)
             logging.info(f"Connected to NATS at {self.nc.connected_url.netloc}...")
