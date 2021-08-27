@@ -20,22 +20,20 @@ class NatsWrapper:
         self.NATS_PASSWORD = None
         self.NKEY_SEED_FILENAME = None
         self.NATS_SERVER_URL = os.environ["NATS_SERVER_URL"]
+        self.NATS_USERNAME = os.environ["NATS_USERNAME"]
+        self.NATS_PASSWORD = os.environ["NATS_PASSWORD"]
         if "NATS_ENDPOINT" in os.environ:
             self.NATS_SERVER_URL = os.environ["NATS_ENDPOINT"]
         if "NKEY_SEED_FILENAME" in os.environ:
             self.NKEY_SEED_FILENAME = os.environ["NKEY_SEED_FILENAME"]
-        elif "NATS_USERNAME" in os.environ:
-            self.NATS_USERNAME = os.environ["NATS_USERNAME"]
-            self.NATS_PASSWORD = os.environ["NATS_PASSWORD"]
         self.loop = None
 
     async def connect(self):
         self.nc = NATS()
         self.loop = asyncio.get_event_loop()
-        self.add_signal_handler()
 
         async def error_cb(e):
-            logging.warning(f"Error: {str(e)}")
+            logging.warning(f"Nats Error : {str(e)}")
 
         async def closed_cb():
             logging.warning("Closed connection to NATS")
@@ -45,8 +43,10 @@ class NatsWrapper:
 
         async def reconnected_cb():
             logging.warning(
-                f"Reconnected to NATS at nats://{self.nc.connected_url.netloc}"
+                f"Reconnected to NATS at nats://{self.nc.connected_url.netloc} with cid: {self.nc._client_id}"
             )
+            logging.info(f"Current server info: {self.nc._server_info}")
+            logging.info(f"NATS stats: {self.nc.stats}")
 
         options = {
             "loop": self.loop,
@@ -60,19 +60,20 @@ class NatsWrapper:
             "verbose": True,
             "user": self.NATS_USERNAME,
             "password": self.NATS_PASSWORD,
-            "nkeys_seed": self.NKEY_SEED_FILENAME,            
+            "nkeys_seed": self.NKEY_SEED_FILENAME,
         }
         try:
             await self.nc.connect(**options)
-            logging.info(f"Connected to NATS at {self.nc.connected_url.netloc}...")
+            logging.info(
+                f"Connected to NATS at {self.nc.connected_url.netloc}... with cid: {self.nc._client_id}"
+            )
+            logging.info(f"Current server info: {self.nc._server_info}")
+            logging.info(f"NATS stats: {self.nc.stats}")
+            logging.info(f"NATS options: {self.nc.options}")
         except Exception as e:
             logging.info("Failed to connect to nats")
             logging.error(e)
 
-    async def close(self):
-        await self.nc.close()
-
-    def add_signal_handler(self):
         def signal_handler():
             if self.nc.is_closed:
                 return
@@ -81,6 +82,9 @@ class NatsWrapper:
 
         for sig in ("SIGINT", "SIGTERM"):
             self.loop.add_signal_handler(getattr(signal, sig), signal_handler)
+
+    async def close(self):
+        await self.nc.close()
 
     async def subscribe(
         self,
