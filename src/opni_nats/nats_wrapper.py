@@ -20,12 +20,15 @@ class NatsWrapper:
         self.NATS_PASSWORD = None
         self.NKEY_SEED_FILENAME = None
         self.NATS_SERVER_URL = os.environ["NATS_SERVER_URL"]
-        self.NATS_USERNAME = os.environ["NATS_USERNAME"]
-        self.NATS_PASSWORD = os.environ["NATS_PASSWORD"]
+
         if "NATS_ENDPOINT" in os.environ:
             self.NATS_SERVER_URL = os.environ["NATS_ENDPOINT"]
         if "NKEY_SEED_FILENAME" in os.environ:
             self.NKEY_SEED_FILENAME = os.environ["NKEY_SEED_FILENAME"]
+        else:
+            self.NATS_USERNAME = os.environ["NATS_USERNAME"]
+            self.NATS_PASSWORD = os.environ["NATS_PASSWORD"]
+
         self.loop = None
 
     async def connect(self):
