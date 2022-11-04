@@ -2,19 +2,23 @@
 import asyncio
 import logging
 import os
-import signal
 
 # Third Party
 from nats.aio.client import Client as NATS
 from nats.errors import TimeoutError
+from nats.js.errors import BucketNotFoundError, NotFoundError
+from nats.js.kv import KeyValue
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-NATS_SERVER_URL = os.getenv("NATS_SERVER_URL", os.getenv("NATS_ENDPOINT", "nats://0.0.0.0:4222"))
+NATS_SERVER_URL = os.getenv(
+    "NATS_SERVER_URL", os.getenv("NATS_ENDPOINT", "nats://0.0.0.0:4222")
+)
 NKEY_SEED_FILENAME = os.getenv("NKEY_SEED_FILENAME", None)
 NATS_USERNAME = os.getenv("NATS_USERNAME", None)
 NATS_PASSWORD = os.getenv("NATS_PASSWORD", None)
+
 
 class NatsWrapper:
     def __init__(self):
@@ -74,7 +78,6 @@ class NatsWrapper:
             logging.info(f"Current server info: {self.nc._server_info}")
             logging.info(f"NATS stats: {self.nc.stats}")
             logging.info(f"NATS options: {self.nc.options}")
-            self.js = self.nc.jetstream()
         except Exception as e:
             logging.info("Failed to connect to nats")
             logging.error(e)
@@ -90,6 +93,51 @@ class NatsWrapper:
 
     async def close(self):
         await self.nc.close()
+
+    def get_jetstream(self):
+        """
+        Create JetStream context.
+        """
+        self.js = self.nc.jetstream()
+        return self.js
+
+    async def get_bucket(self, bucket: str) -> KeyValue:
+        """
+        return the bucket with name {bucket}
+        if this bucket doesn't exist, return None
+        """
+        if self.js is None:
+            self.get_jetstream()
+        try:
+            kv = await self.js.key_value(bucket=bucket)
+            return kv
+        except (BucketNotFoundError, NotFoundError) as e:
+            logging.error(f"Get bucket failed, bucket : {bucket} doesn't exist")
+            logging.error(e)
+            return None
+
+    async def create_bucket(self, bucket: str) -> KeyValue:
+        """
+        Create a bucket with name {bucket}
+        return the bucket
+        """
+        if self.js is None:
+            self.get_jetstream()
+        return await self.js.create_key_value(bucket=bucket)
+
+    async def delete_bucket(self, bucket: str) -> bool:
+        """
+        Delete the bucket with name {bucket}
+        return bool
+        """
+        if self.js is None:
+            self.get_jetstream()
+        try:
+            return await self.js.delete_key_value(bucket=bucket)
+        except (BucketNotFoundError, NotFoundError) as e:
+            logging.error(f"Delete bucket failed, bucket : {bucket} not found")
+            logging.error(e)
+            return False
 
     async def subscribe(
         self,
@@ -112,6 +160,7 @@ class NatsWrapper:
 
     async def request(self, nats_subject: str, payload, timeout=1):
         return await self.nc.request(nats_subject, payload, timeout=timeout)
+
 
 #### the following are examples
 async def nats_request(nw):
