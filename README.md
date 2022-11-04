@@ -12,6 +12,8 @@ nats-server
 2. test the script: (assume your nats server is running on nats://0.0.0.0:4222)
 ```
 export NATS_SERVER_URL="nats://0.0.0.0:4222"
+export NATS_USERNAME=
+export NATS_PASSWORD=
 cd src/opni_nats
 python nats_wrapper.py
 ```

@@ -12,34 +12,25 @@ from nats.js.kv import KeyValue
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-NATS_SERVER_URL = os.getenv(
-    "NATS_SERVER_URL", os.getenv("NATS_ENDPOINT", "nats://0.0.0.0:4222")
-)
-NKEY_SEED_FILENAME = os.getenv("NKEY_SEED_FILENAME", None)
-NATS_USERNAME = os.getenv("NATS_USERNAME", None)
-NATS_PASSWORD = os.getenv("NATS_PASSWORD", None)
 
 
 class NatsWrapper:
     def __init__(self):
         self.nc = None
         self.js = None
-        self.NATS_USERNAME = NATS_USERNAME
-        self.NATS_PASSWORD = NATS_PASSWORD
-        self.NKEY_SEED_FILENAME = NKEY_SEED_FILENAME
-        self.NATS_SERVER_URL = NATS_SERVER_URL
+        self.NKEY_SEED_FILENAME = None
+        self.NATS_USERNAME = None
+        self.NATS_PASSWORD = None
 
-        # if "NKEY_SEED_FILENAME" in os.environ:
-        #     self.NKEY_SEED_FILENAME = os.environ["NKEY_SEED_FILENAME"]
-        # else:
-        #     self.NATS_USERNAME = os.environ["NATS_USERNAME"]
-        #     self.NATS_PASSWORD = os.environ["NATS_PASSWORD"]
-
-        # self.loop = None
+        self.NATS_SERVER_URL = os.getenv("NATS_SERVER_URL", os.environ["NATS_ENDPOINT"])
+        if "NKEY_SEED_FILENAME" in os.environ:
+            self.NKEY_SEED_FILENAME = os.environ["NKEY_SEED_FILENAME"]
+        else:
+            self.NATS_USERNAME = os.environ["NATS_USERNAME"]
+            self.NATS_PASSWORD = os.environ["NATS_PASSWORD"]
 
     async def connect(self):
         self.nc = NATS()
-        # self.loop = asyncio.get_event_loop()
 
         async def error_cb(e):
             logging.error(f"Nats Error : {str(e)}")
@@ -81,15 +72,6 @@ class NatsWrapper:
         except Exception as e:
             logging.info("Failed to connect to nats")
             logging.error(e)
-
-        # def signal_handler():
-        #     if self.nc.is_closed:
-        #         return
-        #     logging.warning("Disconnecting...")
-        #     self.loop.create_task(self.nc.close())
-
-        # for sig in ("SIGINT", "SIGTERM"):
-        #     self.loop.add_signal_handler(getattr(signal, sig), signal_handler)
 
     async def close(self):
         await self.nc.close()
