@@ -22,7 +22,11 @@ class NatsWrapper:
         self.NATS_USERNAME = None
         self.NATS_PASSWORD = None
 
-        self.NATS_SERVER_URL = os.getenv("NATS_SERVER_URL", os.environ["NATS_ENDPOINT"])
+        if "NATS_SERVER_URL" in os.environ:
+            self.NATS_SERVER_URL = os.environ["NATS_SERVER_URL"]
+        else:
+            self.NATS_SERVER_URL = os.environ["NATS_ENDPOINT"]
+
         if "NKEY_SEED_FILENAME" in os.environ:
             self.NKEY_SEED_FILENAME = os.environ["NKEY_SEED_FILENAME"]
         else:
