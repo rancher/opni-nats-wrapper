@@ -7,7 +7,7 @@ import os
 from nats.aio.client import Client as NATS
 from nats.errors import TimeoutError
 from nats.js.errors import BucketNotFoundError, NotFoundError
-from nats.js.kv import KeyValue
+from nats_keyvalue_wrapper import NatsKeyValueWrapper
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -87,7 +87,7 @@ class NatsWrapper:
         self.js = self.nc.jetstream()
         return self.js
 
-    async def get_bucket(self, bucket: str) -> KeyValue:
+    async def get_bucket(self, bucket: str) -> NatsKeyValueWrapper:
         """
         return the bucket with name {bucket}
         if this bucket doesn't exist, return None
@@ -96,20 +96,21 @@ class NatsWrapper:
             self.get_jetstream()
         try:
             kv = await self.js.key_value(bucket=bucket)
-            return kv
+            return NatsKeyValueWrapper(bucket, kv)
         except (BucketNotFoundError, NotFoundError) as e:
             logging.error(f"Get bucket failed, bucket : {bucket} doesn't exist")
             logging.error(e)
             return None
 
-    async def create_bucket(self, bucket: str) -> KeyValue:
+    async def create_bucket(self, bucket: str) -> NatsKeyValueWrapper:
         """
         Create a bucket with name {bucket}
         return the bucket
         """
         if self.js is None:
             self.get_jetstream()
-        return await self.js.create_key_value(bucket=bucket)
+        kv = await self.js.create_key_value(bucket=bucket)
+        return NatsKeyValueWrapper(bucket, kv)
 
     async def delete_bucket(self, bucket: str) -> bool:
         """
