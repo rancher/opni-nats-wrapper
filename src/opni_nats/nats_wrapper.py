@@ -7,11 +7,35 @@ import os
 from nats.aio.client import Client as NATS
 from nats.errors import TimeoutError
 from nats.js.errors import BucketNotFoundError, NotFoundError
-from nats_keyvalue_wrapper import NatsKeyValueWrapper
+from nats.js.kv import KeyValue
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+
+class NatsKeyValueWrapper:
+    def __init__(self, bucket: str, kv: KeyValue):
+        self.bucket = bucket
+        self.kv = kv
+
+    def get_bucket_name(self) -> str:
+        return self.bucket
+
+    async def get(self, key: str, revision: int = None) -> bytes:
+        """
+        get returns the latest value for the key.
+        """
+        try:
+            entry = await self.kv.get(key, revision)
+            return entry.value
+        except Exception as e:
+            return None
+
+    async def put(self, key: str, value: bytes) -> int:
+        """
+        put will place the new value for the key into the store and return the revision number.
+        """
+        return await self.kv.put(key, value)
+
+    async def delete(self, key: str, last: int = None):
+        await self.kv.delete(key=key, last=last)
 
 
 class NatsWrapper:

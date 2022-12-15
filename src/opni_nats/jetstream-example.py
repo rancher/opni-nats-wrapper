@@ -66,13 +66,17 @@ async def jetstream_streaming(js):
 
 async def kv_usage(nw):
     b = "my_kv_bucket"
-    await nw.get_bucket(b)
+    res = await nw.get_bucket(b)
+    print(res)
     kv = await nw.create_bucket(b)
-    await kv.put("hello1", b"world2")
-    entry = await kv.get("hello1")
-    logging.info(f"KeyValue.Entry: key={entry.key}, value={entry.value}")
+    p = await kv.put("hello1", b"world1")
+    print(p)
+    p = await kv.put("hello1", b"world2")
+    print(p)
+    res = await kv.get("hello1", p)
+    logging.info(f"res : {res}")
     await kv.delete("hello1")
-    await nw.delete_bucket(b)
+    print(await nw.delete_bucket(b))
 
 
 async def main():
