@@ -9,6 +9,10 @@ from nats.errors import TimeoutError
 from nats.js.errors import BucketNotFoundError, NotFoundError
 from nats.js.kv import KeyValue
 
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 class NatsKeyValueWrapper:
     def __init__(self, bucket: str, kv: KeyValue):
