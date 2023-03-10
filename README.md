@@ -1,6 +1,6 @@
 # opni-nats-wrapper
 
-This repo contains shared code used to build the pypi package https://pypi.org/project/opni-nats/0.0.0.1/ which is used in several opni services
+This repo contains shared code used to build the pypi package https://pypi.org/project/opni-nats/ which is used in several opni services
 
 ## Testing
 1. have your nats server running in another terminal. For Mac user, you can do:
@@ -12,6 +12,8 @@ nats-server
 2. test the script: (assume your nats server is running on nats://0.0.0.0:4222)
 ```
 export NATS_SERVER_URL="nats://0.0.0.0:4222"
+export NATS_USERNAME=
+export NATS_PASSWORD=
 cd src/opni_nats
 python nats_wrapper.py
 ```

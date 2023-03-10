@@ -2,41 +2,70 @@
 import asyncio
 import logging
 import os
-import signal
 
 # Third Party
 from nats.aio.client import Client as NATS
-from nats.aio.errors import ErrTimeout
+from nats.errors import TimeoutError
+from nats.js.errors import BucketNotFoundError, NotFoundError
+from nats.js.kv import KeyValue
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 
+class NatsKeyValueWrapper:
+    def __init__(self, bucket: str, kv: KeyValue):
+        self.bucket = bucket
+        self.kv = kv
+
+    def get_bucket_name(self) -> str:
+        return self.bucket
+
+    async def get(self, key: str, revision: int = None) -> bytes:
+        """
+        get returns the latest value for the key.
+        """
+        try:
+            entry = await self.kv.get(key, revision)
+            return entry.value
+        except Exception as e:
+            return None
+
+    async def put(self, key: str, value: bytes) -> int:
+        """
+        put will place the new value for the key into the store and return the revision number.
+        """
+        return await self.kv.put(key, value)
+
+    async def delete(self, key: str, last: int = None):
+        await self.kv.delete(key=key, last=last)
+
+
 class NatsWrapper:
     def __init__(self):
         self.nc = None
+        self.js = None
+        self.NKEY_SEED_FILENAME = None
         self.NATS_USERNAME = None
         self.NATS_PASSWORD = None
-        self.NKEY_SEED_FILENAME = None
-        self.NATS_SERVER_URL = os.environ["NATS_SERVER_URL"]
 
-        if "NATS_ENDPOINT" in os.environ:
+        if "NATS_SERVER_URL" in os.environ:
+            self.NATS_SERVER_URL = os.environ["NATS_SERVER_URL"]
+        else:
             self.NATS_SERVER_URL = os.environ["NATS_ENDPOINT"]
+
         if "NKEY_SEED_FILENAME" in os.environ:
             self.NKEY_SEED_FILENAME = os.environ["NKEY_SEED_FILENAME"]
         else:
             self.NATS_USERNAME = os.environ["NATS_USERNAME"]
             self.NATS_PASSWORD = os.environ["NATS_PASSWORD"]
 
-        self.loop = None
-
     async def connect(self):
         self.nc = NATS()
-        self.loop = asyncio.get_event_loop()
 
         async def error_cb(e):
-            logging.warning(f"Nats Error : {str(e)}")
+            logging.error(f"Nats Error : {str(e)}")
 
         async def closed_cb():
             logging.warning("Closed connection to NATS")
@@ -45,19 +74,18 @@ class NatsWrapper:
             logging.warning("Disconnected from NATS")
 
         async def reconnected_cb():
-            logging.warning(
+            logging.info(
                 f"Reconnected to NATS at nats://{self.nc.connected_url.netloc} with cid: {self.nc._client_id}"
             )
             logging.info(f"Current server info: {self.nc._server_info}")
             logging.info(f"NATS stats: {self.nc.stats}")
 
         options = {
-            "loop": self.loop,
+            "servers": [self.NATS_SERVER_URL],
             "error_cb": error_cb,
             "closed_cb": closed_cb,
             "reconnected_cb": reconnected_cb,
             "disconnected_cb": on_disconnect,
-            "servers": [self.NATS_SERVER_URL],
             "max_reconnect_attempts": -1,
             "reconnect_time_wait": 5,
             "verbose": True,
@@ -77,17 +105,54 @@ class NatsWrapper:
             logging.info("Failed to connect to nats")
             logging.error(e)
 
-        def signal_handler():
-            if self.nc.is_closed:
-                return
-            logging.warning("Disconnecting...")
-            self.loop.create_task(self.nc.close())
-
-        for sig in ("SIGINT", "SIGTERM"):
-            self.loop.add_signal_handler(getattr(signal, sig), signal_handler)
-
     async def close(self):
         await self.nc.close()
+
+    def get_jetstream(self):
+        """
+        Create JetStream context.
+        """
+        self.js = self.nc.jetstream()
+        return self.js
+
+    async def get_bucket(self, bucket: str) -> NatsKeyValueWrapper:
+        """
+        return the bucket with name {bucket}
+        if this bucket doesn't exist, return None
+        """
+        if self.js is None:
+            self.get_jetstream()
+        try:
+            kv = await self.js.key_value(bucket=bucket)
+            return NatsKeyValueWrapper(bucket, kv)
+        except (BucketNotFoundError, NotFoundError) as e:
+            logging.error(f"Get bucket failed, bucket : {bucket} doesn't exist")
+            logging.error(e)
+            return None
+
+    async def create_bucket(self, bucket: str) -> NatsKeyValueWrapper:
+        """
+        Create a bucket with name {bucket}
+        return the bucket
+        """
+        if self.js is None:
+            self.get_jetstream()
+        kv = await self.js.create_key_value(bucket=bucket)
+        return NatsKeyValueWrapper(bucket, kv)
+
+    async def delete_bucket(self, bucket: str) -> bool:
+        """
+        Delete the bucket with name {bucket}
+        return bool
+        """
+        if self.js is None:
+            self.get_jetstream()
+        try:
+            return await self.js.delete_key_value(bucket=bucket)
+        except (BucketNotFoundError, NotFoundError) as e:
+            logging.error(f"Delete bucket failed, bucket : {bucket} not found")
+            logging.error(e)
+            return False
 
     async def subscribe(
         self,
@@ -97,25 +162,22 @@ class NatsWrapper:
         subscribe_handler=None,
     ):
         async def default_subscribe_handler(msg):
-            subject = msg.subject
-            reply = msg.reply
             payload_data = msg.data.decode()
-            await payload_queue.put(payload_data)
+            if payload_queue is not None:
+                await payload_queue.put(payload_data)
 
         if subscribe_handler is None:
             subscribe_handler = default_subscribe_handler
         await self.nc.subscribe(nats_subject, queue=nats_queue, cb=subscribe_handler)
 
     async def publish(self, nats_subject: str, payload_df):
-        """
-        this is not necessary at this point though
-        """
         await self.nc.publish(nats_subject, payload_df)
 
     async def request(self, nats_subject: str, payload, timeout=1):
         return await self.nc.request(nats_subject, payload, timeout=timeout)
 
 
+#### the following are examples
 async def nats_request(nw):
     my_request = b"Request!"
     try:
@@ -125,7 +187,7 @@ async def nats_request(nw):
             timeout=1,
         )
         response = response.data.decode()
-    except ErrTimeout:
+    except TimeoutError:
         response = ""
     logging.info(f" <nats request> response for the request : {response}")
 
@@ -164,10 +226,10 @@ async def nats_publisher(nw):
     await nw.publish("preprocessing-logs", payload)
 
 
-async def run(loop):
+async def run(loop, nw):
+
     logging.info("Attempting to connect to NATS")
     await nw.connect()
-
     # publish and subscribe
     payload_queue = asyncio.Queue(loop=loop)
     await nats_subscriber(nw, payload_queue)
@@ -184,6 +246,6 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
 
     nw = NatsWrapper()
-    task = loop.create_task(run(loop))
+    task = loop.create_task(run(loop, nw))
     loop.run_until_complete(task)
     loop.close()
